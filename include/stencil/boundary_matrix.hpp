@@ -96,6 +96,16 @@ public:
         return _data_stride;
     }
 
+    /// Returns the number of elements (excluding boundaries).
+    auto elem_count() const -> std::size_t {
+        return width() * height();
+    }
+
+    /// Returns the number of elements (including boundaries).
+    auto elem_with_boundary_count() const -> std::size_t {
+        return width_with_boundary() * height_with_boundary();
+    }
+
     auto elem_with_boundary_at(std::size_t row, std::size_t col) const -> ElemTy& {
         assert(row < height_with_boundary() && col < width_with_boundary());
         return _data[row * _data_stride + col];
@@ -201,7 +211,7 @@ public:
         }
     }
 
-private:
+protected:
     std::size_t _actual_width;
     std::size_t _actual_height;
     unsigned _neighbor_width;

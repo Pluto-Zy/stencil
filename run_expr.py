@@ -6,7 +6,7 @@ import csv
 block_sizes = [8, 16, 32, 48, 50, 64, 72, 88, 100, 120]
 iterations = [1, 10, 100, 1000, 5000, 10000, 50000, 100000]
 
-pattern = r'The average time taken by (\w+) method is (\d+\.\d+)ms for \d+ iterations\.'
+pattern = r'The average time taken by (.*) method is (.*)ms for \d+ iterations\.'
 outputs = []
 
 for block_size in block_sizes:
@@ -15,7 +15,7 @@ for block_size in block_sizes:
         command = [
             'bsub', '-I', '-b', '-q', 'q_ustc', '-N', '1', '-np', '1', '-cgsp', '64', '-cache_size', '0',
             './build/bin/stencil_main',
-            '-m', str(matrix_size), '-b', str(block_size), '-i', str(iteration),
+            '-m', str(matrix_size), '-b', str(block_size), '-i', str(iteration), '-w', '1'
         ]
 
         print(f'----------- block size: {block_size}, iteration: {iteration} -----------')
@@ -37,7 +37,7 @@ for block_size in block_sizes:
 
 
 with open('output.csv', 'w', newline='') as file:
-    fieldnames = ['Block Size', 'Iteration', 'DMA', 'RMA']
+    fieldnames = outputs[0].keys()
     writer = csv.DictWriter(file, fieldnames=fieldnames)
     writer.writeheader()
     writer.writerows(outputs)

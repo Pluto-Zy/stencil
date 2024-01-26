@@ -17,6 +17,11 @@ public:
         /// All CPEs only load their own elements through DMA, and use RMA to obtain neighbor
         /// elements from other CPEs.
         RMA,
+        /// Iteratively performs the stencil operation, where all CPEs use DMA to load elements
+        /// from main memory and additionally load required neighbor elements. Local blocks of each
+        /// CPE (including extra boundaries) are stored in contiguous memory. When exchanging
+        /// non-contiguous memory areas, they will first pack them into contiguous memory areas.
+        DMA_SLAVE_PACK,
     };
 
     Stencil() = default;
