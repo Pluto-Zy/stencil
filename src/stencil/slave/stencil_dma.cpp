@@ -397,16 +397,12 @@ private:
         });
     }
 };
-}  // namespace
 
-void stencil_iterate_dma(Arguments* _args) {
-    Arguments args;
-    athread_dma_get(&args, _args, sizeof(Arguments));
-
+namespace neighbor1_impl {
+void stencil_iterate_dma(Arguments& args) {
     // Divide the host matrix into blocks.
-    BoundaryMatrixView<float> local_host_input =
-        args.input.block_subview(args.block_size, args.block_size, _ROW, _COL);
-    BoundaryMatrixView<float> local_host_output =
+    auto local_host_input = args.input.block_subview(args.block_size, args.block_size, _ROW, _COL);
+    auto local_host_output =
         args.output.block_subview(args.block_size, args.block_size, _ROW, _COL);
 
     // Allocate LDM.
@@ -568,4 +564,550 @@ void stencil_iterate_dma(Arguments* _args) {
 
     // Write the final result.
     slave_input.dma_put_content_to(local_host_input);
+}
+}  // namespace neighbor1_impl
+
+namespace neighbors_impl {
+void stencil_iterate_dma(Arguments& args) {
+    // Divide the host matrix into blocks.
+    auto local_host_input = args.input.block_subview(args.block_size, args.block_size, _ROW, _COL);
+    auto local_host_output =
+        args.output.block_subview(args.block_size, args.block_size, _ROW, _COL);
+
+    // Allocate LDM.
+    SlaveBlock slave_input(local_host_input);
+    SlaveBlock slave_output(local_host_output);
+
+    if (slave_input.empty() || slave_output.empty()) {
+        return;
+    }
+
+    // Load content into LDM.
+    slave_input.dma_get_content_from(local_host_input);
+
+    athread_rply_t dma_reply = 0;
+    unsigned dma_reply_count = 0;
+
+    using ElemTy = decltype(local_host_input)::value_type;
+
+    unsigned const boundary_width = local_host_input.boundary_width();
+    unsigned const boundary_height = local_host_input.boundary_height();
+    unsigned const width = local_host_input.width();
+    unsigned const height = local_host_input.height();
+    ElemTy const avg = ElemTy(1) / ElemTy((boundary_width + boundary_height) * 2);
+
+    // Iterations.
+    for (unsigned i = 0; i != args.iterations; ++i) {
+        // Load boundaries.
+        slave_input.dma_iget_boundary_from(local_host_input, &dma_reply, dma_reply_count);
+
+        // Compute contents.
+        for (unsigned row = boundary_height; row != height - boundary_height; ++row) {
+            unsigned col = boundary_width;
+
+            // For elements whose left neighbor may be stored in LeftIn buffer.
+            // TODO: Note that if the neighborhood is too large, an element's left and right
+            // neighbors may be saved in LeftIn and RightIn respectively in the same time. We don't
+            // consider this case here.
+            // TODO: Add assert() here.
+            for (unsigned const end = boundary_width * 2; col != end; ++col) {
+                ElemTy sum {};
+
+                // Left neighbors in LeftIn array.
+                for (unsigned nc = col - boundary_width; nc != boundary_width; ++nc) {
+                    sum += slave_input.left_inner_boundary_at(row, nc);
+                }
+
+                // Left and right neighbors.
+                for (unsigned nc = boundary_width; nc != col + boundary_width + 1; ++nc) {
+                    sum += slave_input.data_at(row, nc);
+                }
+
+                // Top and bottom neighbors.
+                for (unsigned nr = row - boundary_height; nr != row + boundary_height + 1; ++nr) {
+                    sum += slave_input.data_at(nr, col);
+                }
+
+                sum -= slave_input.data_at(row, col) + slave_input.data_at(row, col);
+                slave_output.data_at(row, col) = sum * avg;
+            }
+
+            for (unsigned const end = width - boundary_width * 2; col != end; ++col) {
+                ElemTy sum {};
+
+                // Left and right neighbors.
+                for (unsigned nc = col - boundary_width; nc != col + boundary_width + 1; ++nc) {
+                    sum += slave_input.data_at(row, nc);
+                }
+
+                // Top and bottom neighbors.
+                for (unsigned nr = row - boundary_height; nr != row + boundary_height + 1; ++nr) {
+                    sum += slave_input.data_at(nr, col);
+                }
+
+                sum -= slave_input.data_at(row, col) + slave_input.data_at(row, col);
+                slave_output.data_at(row, col) = sum * avg;
+            }
+
+            // For elements whose right neighbor may be stored in RightIn buffer.
+            // TODO: Note that if the neighborhood is too large, an element's left and right
+            // neighbors may be saved in LeftIn and RightIn respectively in the same time. We don't
+            // consider this case here.
+            // TODO: Add assert() here.
+            for (unsigned const end = width - boundary_width; col != end; ++col) {
+                ElemTy sum {};
+
+                // Left and right neighbors.
+                for (unsigned nc = col - boundary_width; nc != end; ++nc) {
+                    sum += slave_input.data_at(row, nc);
+                }
+
+                // Right neighbors in RightIn array.
+                for (unsigned nc = 0; nc != col + boundary_width + 1 - end; ++nc) {
+                    sum += slave_input.right_inner_boundary_at(row, nc);
+                }
+
+                // Top and bottom neighbors.
+                for (unsigned nr = row - boundary_height; nr != row + boundary_height + 1; ++nr) {
+                    sum += slave_input.data_at(nr, col);
+                }
+
+                sum -= slave_input.data_at(row, col) + slave_input.data_at(row, col);
+                slave_output.data_at(row, col) = sum * avg;
+            }
+        }
+
+        // Wait for boundaries.
+        athread_dma_wait_value(&dma_reply, dma_reply_count);
+
+        {
+            unsigned row = 0;
+
+            // Left-top corner.
+            for (; row != boundary_height; ++row) {
+                for (unsigned col = 0; col != boundary_width; ++col) {
+                    ElemTy sum {};
+
+                    // left
+                    for (unsigned nc = col; nc != boundary_width; ++nc) {
+                        sum += slave_input.left_boundary_at(row, nc);
+                    }
+
+                    // mid
+                    for (unsigned nc = 0; nc != boundary_width; ++nc) {
+                        sum += slave_input.left_inner_boundary_at(row, nc);
+                    }
+
+                    // right
+                    for (unsigned nc = boundary_width; nc != col + boundary_width + 1; ++nc) {
+                        sum += slave_input.data_at(row, nc);
+                    }
+
+                    // top
+                    for (unsigned nr = row; nr != boundary_height; ++nr) {
+                        sum += slave_input.top_boundary_at(nr, col);
+                    }
+
+                    // top to bottom
+                    for (unsigned nr = 0; nr != row + boundary_height + 1; ++nr) {
+                        sum += slave_input.left_inner_boundary_at(nr, col);
+                    }
+
+                    sum -= slave_input.left_inner_boundary_at(row, col)
+                        + slave_input.left_inner_boundary_at(row, col);
+                    slave_output.left_inner_boundary_at(row, col) = sum * avg;
+                }
+            }
+
+            // Left boundary.
+            for (; row != height - boundary_height; ++row) {
+                for (unsigned col = 0; col != boundary_width; ++col) {
+                    ElemTy sum {};
+
+                    // left
+                    for (unsigned nc = col; nc != boundary_width; ++nc) {
+                        sum += slave_input.left_boundary_at(row, nc);
+                    }
+
+                    // mid
+                    for (unsigned nc = 0; nc != boundary_width; ++nc) {
+                        sum += slave_input.left_inner_boundary_at(row, nc);
+                    }
+
+                    // right
+                    for (unsigned nc = boundary_width; nc != col + boundary_width + 1; ++nc) {
+                        sum += slave_input.data_at(row, nc);
+                    }
+
+                    // top to bottom
+                    for (unsigned nr = row - boundary_height; nr != row + boundary_height + 1;
+                         ++nr)
+                    {
+                        sum += slave_input.left_inner_boundary_at(nr, col);
+                    }
+
+                    sum -= slave_input.left_inner_boundary_at(row, col)
+                        + slave_input.left_inner_boundary_at(row, col);
+                    slave_output.left_inner_boundary_at(row, col) = sum * avg;
+                }
+            }
+
+            // Left-bottom corner.
+            for (; row != height; ++row) {
+                for (unsigned col = 0; col != boundary_width; ++col) {
+                    ElemTy sum {};
+
+                    // left
+                    for (unsigned nc = col; nc != boundary_width; ++nc) {
+                        sum += slave_input.left_boundary_at(row, nc);
+                    }
+
+                    // mid
+                    for (unsigned nc = 0; nc != boundary_width; ++nc) {
+                        sum += slave_input.left_inner_boundary_at(row, nc);
+                    }
+
+                    // right
+                    for (unsigned nc = boundary_width; nc != col + boundary_width + 1; ++nc) {
+                        sum += slave_input.data_at(row, nc);
+                    }
+
+                    // top to bottom
+                    for (unsigned nr = row - boundary_height; nr != height; ++nr) {
+                        sum += slave_input.left_inner_boundary_at(nr, col);
+                    }
+
+                    // bottom
+                    for (unsigned nr = 0; nr != row - (height - boundary_height) + 1; ++nr) {
+                        sum += slave_input.bottom_boundary_at(nr, col);
+                    }
+
+                    sum -= slave_input.left_inner_boundary_at(row, col)
+                        + slave_input.left_inner_boundary_at(row, col);
+                    slave_output.left_inner_boundary_at(row, col) = sum * avg;
+                }
+            }
+        }
+
+        // Write left boundary to the host memory.
+        slave_output.dma_iput_left_boundary_to(local_host_output, &dma_reply);
+
+        {
+            unsigned const col_beg = width - boundary_width;
+            unsigned row = 0;
+
+            // Right-top corner.
+            for (; row != boundary_height; ++row) {
+                for (unsigned col = col_beg; col != width; ++col) {
+                    ElemTy sum {};
+                    unsigned const col_offset = col - col_beg;
+
+                    // left
+                    for (unsigned nc = col - boundary_width; nc != width - boundary_width; ++nc) {
+                        sum += slave_input.data_at(row, nc);
+                    }
+
+                    // mid
+                    for (unsigned nc = 0; nc != boundary_width; ++nc) {
+                        sum += slave_input.right_inner_boundary_at(row, nc);
+                    }
+
+                    // right
+                    for (unsigned nc = 0; nc != col_offset + 1; ++nc) {
+                        sum += slave_input.right_boundary_at(row, nc);
+                    }
+
+                    // top
+                    for (unsigned nr = row; nr != boundary_height; ++nr) {
+                        sum += slave_input.top_boundary_at(nr, col);
+                    }
+
+                    // top to bottom
+                    for (unsigned nr = 0; nr != row + boundary_height + 1; ++nr) {
+                        sum += slave_input.right_inner_boundary_at(nr, col_offset);
+                    }
+
+                    sum -= slave_input.right_inner_boundary_at(row, col_offset)
+                        + slave_input.right_inner_boundary_at(row, col_offset);
+                    slave_output.right_inner_boundary_at(row, col_offset) = sum * avg;
+                }
+            }
+
+            // Right boundary.
+            for (; row != height - boundary_height; ++row) {
+                for (unsigned col = col_beg; col != width; ++col) {
+                    ElemTy sum {};
+                    unsigned const col_offset = col - col_beg;
+
+                    // left
+                    for (unsigned nc = col - boundary_width; nc != width - boundary_width; ++nc) {
+                        sum += slave_input.data_at(row, nc);
+                    }
+
+                    // mid
+                    for (unsigned nc = 0; nc != boundary_width; ++nc) {
+                        sum += slave_input.right_inner_boundary_at(row, nc);
+                    }
+
+                    // right
+                    for (unsigned nc = 0; nc != col_offset + 1; ++nc) {
+                        sum += slave_input.right_boundary_at(row, nc);
+                    }
+
+                    // top to bottom
+                    for (unsigned nr = row - boundary_height; nr != row + boundary_height + 1;
+                         ++nr)
+                    {
+                        sum += slave_input.right_inner_boundary_at(nr, col_offset);
+                    }
+
+                    sum -= slave_input.right_inner_boundary_at(row, col_offset)
+                        + slave_input.right_inner_boundary_at(row, col_offset);
+                    slave_output.right_inner_boundary_at(row, col_offset) = sum * avg;
+                }
+            }
+
+            // Right-bottom corner.
+            for (; row != height; ++row) {
+                for (unsigned col = col_beg; col != width; ++col) {
+                    ElemTy sum {};
+                    unsigned const col_offset = col - col_beg;
+
+                    // left
+                    for (unsigned nc = col - boundary_width; nc != width - boundary_width; ++nc) {
+                        sum += slave_input.data_at(row, nc);
+                    }
+
+                    // mid
+                    for (unsigned nc = 0; nc != boundary_width; ++nc) {
+                        sum += slave_input.right_inner_boundary_at(row, nc);
+                    }
+
+                    // right
+                    for (unsigned nc = 0; nc != col_offset + 1; ++nc) {
+                        sum += slave_input.right_boundary_at(row, nc);
+                    }
+
+                    // top to bottom
+                    for (unsigned nr = row - boundary_height; nr != height; ++nr) {
+                        sum += slave_input.right_inner_boundary_at(nr, col_offset);
+                    }
+
+                    // bottom
+                    for (unsigned nr = 0; nr != row - (height - boundary_height) + 1; ++nr) {
+                        sum += slave_input.bottom_boundary_at(nr, col);
+                    }
+
+                    sum -= slave_input.right_inner_boundary_at(row, col_offset)
+                        + slave_input.right_inner_boundary_at(row, col_offset);
+                    slave_output.right_inner_boundary_at(row, col_offset) = sum * avg;
+                }
+            }
+        }
+
+        // Write right boundary to the main memory.
+        slave_output.dma_iput_right_boundary_to(local_host_output, &dma_reply);
+
+        // Top boundary.
+        for (unsigned row = 0; row != boundary_height; ++row) {
+            unsigned col = boundary_width;
+
+            // For elements whose left neighbor may be stored in LeftIn buffer.
+            for (unsigned const end = boundary_width * 2; col != end; ++col) {
+                ElemTy sum {};
+
+                // Left neighbors in LeftIn array.
+                for (unsigned nc = col - boundary_width; nc != boundary_width; ++nc) {
+                    sum += slave_input.left_inner_boundary_at(row, nc);
+                }
+
+                // Left and right neighbors.
+                for (unsigned nc = boundary_width; nc != col + boundary_width + 1; ++nc) {
+                    sum += slave_input.data_at(row, nc);
+                }
+
+                // Top boundary.
+                for (unsigned nr = row; nr != boundary_height; ++nr) {
+                    sum += slave_input.top_boundary_at(nr, col);
+                }
+
+                // Top and bottom neighbors.
+                for (unsigned nr = 0; nr != row + boundary_height + 1; ++nr) {
+                    sum += slave_input.data_at(nr, col);
+                }
+
+                sum -= slave_input.data_at(row, col) + slave_input.data_at(row, col);
+                slave_output.data_at(row, col) = sum * avg;
+            }
+
+            for (unsigned const end = width - boundary_width * 2; col != end; ++col) {
+                ElemTy sum {};
+
+                // Left and right neighbors.
+                for (unsigned nc = col - boundary_width; nc != col + boundary_width + 1; ++nc) {
+                    sum += slave_input.data_at(row, nc);
+                }
+
+                // Top boundary.
+                for (unsigned nr = row; nr != boundary_height; ++nr) {
+                    sum += slave_input.top_boundary_at(nr, col);
+                }
+
+                // Top and bottom neighbors.
+                for (unsigned nr = 0; nr != row + boundary_height + 1; ++nr) {
+                    sum += slave_input.data_at(nr, col);
+                }
+
+                sum -= slave_input.data_at(row, col) + slave_input.data_at(row, col);
+                slave_output.data_at(row, col) = sum * avg;
+            }
+
+            // For elements whose right neighbor may be stored in RightIn buffer.
+            for (unsigned const end = width - boundary_width; col != end; ++col) {
+                ElemTy sum {};
+
+                // Left and right neighbors.
+                for (unsigned nc = col - boundary_width; nc != end; ++nc) {
+                    sum += slave_input.data_at(row, nc);
+                }
+
+                // Right neighbors in RightIn array.
+                for (unsigned nc = 0; nc != col + boundary_width + 1 - end; ++nc) {
+                    sum += slave_input.right_inner_boundary_at(row, nc);
+                }
+
+                // top
+                for (unsigned nr = row; nr != boundary_height; ++nr) {
+                    sum += slave_input.top_boundary_at(nr, col);
+                }
+
+                // top to bottom
+                for (unsigned nr = 0; nr != row + boundary_height + 1; ++nr) {
+                    sum += slave_input.data_at(nr, col);
+                }
+
+                sum -= slave_input.data_at(row, col) + slave_input.data_at(row, col);
+                slave_output.data_at(row, col) = sum * avg;
+            }
+        }
+
+        // Write top boundary to the host memory.
+        slave_output.dma_iput_top_boundary_to(local_host_output, &dma_reply);
+
+        // Bottom boundary.
+        for (unsigned row = height - boundary_height; row != height; ++row) {
+            unsigned col = boundary_width;
+
+            // For elements whose left neighbor may be stored in LeftIn buffer.
+            for (unsigned const end = boundary_width * 2; col != end; ++col) {
+                ElemTy sum {};
+
+                // Left neighbors in LeftIn array.
+                for (unsigned nc = col - boundary_width; nc != boundary_width; ++nc) {
+                    sum += slave_input.left_inner_boundary_at(row, nc);
+                }
+
+                // Left and right neighbors.
+                for (unsigned nc = boundary_width; nc != col + boundary_width + 1; ++nc) {
+                    sum += slave_input.data_at(row, nc);
+                }
+
+                // top to bottom
+                for (unsigned nr = row - boundary_height; nr != height; ++nr) {
+                    sum += slave_input.data_at(nr, col);
+                }
+
+                // bottom
+                for (unsigned nr = 0; nr != row - (height - boundary_height) + 1; ++nr) {
+                    sum += slave_input.bottom_boundary_at(nr, col);
+                }
+
+                sum -= slave_input.data_at(row, col) + slave_input.data_at(row, col);
+                slave_output.data_at(row, col) = sum * avg;
+            }
+
+            for (unsigned const end = width - boundary_width * 2; col != end; ++col) {
+                ElemTy sum {};
+
+                // Left and right neighbors.
+                for (unsigned nc = col - boundary_width; nc != col + boundary_width + 1; ++nc) {
+                    sum += slave_input.data_at(row, nc);
+                }
+
+                // top to bottom
+                for (unsigned nr = row - boundary_height; nr != height; ++nr) {
+                    sum += slave_input.data_at(nr, col);
+                }
+
+                // bottom
+                for (unsigned nr = 0; nr != row - (height - boundary_height) + 1; ++nr) {
+                    sum += slave_input.bottom_boundary_at(nr, col);
+                }
+
+                sum -= slave_input.data_at(row, col) + slave_input.data_at(row, col);
+                slave_output.data_at(row, col) = sum * avg;
+            }
+
+            // For elements whose right neighbor may be stored in RightIn buffer.
+            for (unsigned const end = width - boundary_width; col != end; ++col) {
+                ElemTy sum {};
+
+                // Left and right neighbors.
+                for (unsigned nc = col - boundary_width; nc != end; ++nc) {
+                    sum += slave_input.data_at(row, nc);
+                }
+
+                // Right neighbors in RightIn array.
+                for (unsigned nc = 0; nc != col + boundary_width + 1 - end; ++nc) {
+                    sum += slave_input.right_inner_boundary_at(row, nc);
+                }
+
+                // top to bottom
+                for (unsigned nr = row - boundary_height; nr != height; ++nr) {
+                    sum += slave_input.data_at(nr, col);
+                }
+
+                // bottom
+                for (unsigned nr = 0; nr != row - (height - boundary_height) + 1; ++nr) {
+                    sum += slave_input.bottom_boundary_at(nr, col);
+                }
+
+                sum -= slave_input.data_at(row, col) + slave_input.data_at(row, col);
+                slave_output.data_at(row, col) = sum * avg;
+            }
+        }
+
+        // Write bottom boundary to the host memory.
+        slave_output.dma_iput_bottom_boundary_to(local_host_output, &dma_reply);
+        dma_reply_count += 4;
+
+        // Swap the input and result.
+        std::swap(slave_input, slave_output);
+        std::swap(local_host_input, local_host_output);
+
+        athread_dma_wait_value(&dma_reply, dma_reply_count);
+
+        // Synchronize.
+        if (i != args.iterations - 1)
+            athread_ssync_array();
+    }
+
+    // Write the final result.
+    slave_input.dma_put_content_to(local_host_input);
+}
+}  // namespace neighbors_impl
+}  // namespace
+
+void stencil_iterate_dma(Arguments* _args) {
+    Arguments args;
+    athread_dma_get(&args, _args, sizeof(Arguments));
+
+    if (args.input.boundary_width() == args.input.boundary_height()
+        && args.input.boundary_width() == 1)
+    {
+        // Special implementation for neighborhood size 1.
+        neighbor1_impl::stencil_iterate_dma(args);
+    } else {
+        neighbors_impl::stencil_iterate_dma(args);
+    }
 }
