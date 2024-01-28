@@ -1,5 +1,6 @@
 #include "stencil/boundary_matrix.hpp"
 #include "stencil_slave.hpp"
+
 #include <algorithm>
 #include <iterator>
 
@@ -235,7 +236,7 @@ public:
     void dma_iget_boundary_from(  //
         BoundaryMatrixView<ElemTy>& src_block,
         athread_rply_t* reply,
-        unsigned reply_count
+        unsigned& reply_count
     ) const {
         dma_iget_top_boundary_from(src_block, reply);
         dma_iget_bottom_boundary_from(src_block, reply);
