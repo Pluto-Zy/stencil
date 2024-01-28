@@ -38,6 +38,10 @@ auto Stencil::run(Stencil::InputMethod method) -> std::chrono::steady_clock::dur
         athread_spawn((void*) SLAVE_FUN(stencil_iterate_dma_slave_pack), &args);
         athread_join();
         break;
+    case DMA_STATIC_UNROLL:
+        athread_spawn((void*) SLAVE_FUN(stencil_iterate_dma_static_unroll), &args);
+        athread_join();
+        break;
     default:
         break;
     }

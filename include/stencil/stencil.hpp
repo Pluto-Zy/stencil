@@ -22,6 +22,11 @@ public:
         /// CPE (including extra boundaries) are stored in contiguous memory. When exchanging
         /// non-contiguous memory areas, they will first pack them into contiguous memory areas.
         DMA_SLAVE_PACK,
+        /// Iteratively performs the stencil operation, where all CPEs use DMA to load elements
+        /// from main memory and additionally load required neighbor elements. The implementation
+        /// is equivalent to the general implementation in `stencil_iterate_dma`, but enables loop
+        /// unrolling at compile time by enumerating the neighborhood widths.
+        DMA_STATIC_UNROLL,
     };
 
     Stencil() = default;

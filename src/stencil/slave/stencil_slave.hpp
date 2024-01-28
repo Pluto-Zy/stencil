@@ -28,6 +28,11 @@ extern "C" {
 /// memory and additionally load required neighbor elements.
 void SLAVE_FUN(stencil_iterate_dma)(Arguments* args);
 /// Iteratively performs the stencil operation, where all CPEs use DMA to load elements from main
+/// memory and additionally load required neighbor elements. The implementation is equivalent to
+/// the general implementation in `stencil_iterate_dma`, but enables loop unrolling at compile time
+/// by enumerating the neighborhood widths.
+void SLAVE_FUN(stencil_iterate_dma_static_unroll)(Arguments* args);
+/// Iteratively performs the stencil operation, where all CPEs use DMA to load elements from main
 /// memory and additionally load required neighbor elements. Local blocks of each CPE (including
 /// extra boundaries) are stored in contiguous memory. When exchanging non-contiguous memory areas,
 /// they will first pack them into contiguous memory areas.
