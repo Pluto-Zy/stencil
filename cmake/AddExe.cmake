@@ -50,7 +50,8 @@ function(stencil_add_slave_library name)
 
     target_compile_options(${name} PRIVATE
             -Wall -Wextra -Wpedantic
-            -mslave -mieee -msimd)
+            -mslave -mieee -msimd
+            -funroll-all-loops)
 
     target_include_directories(${name} PRIVATE ${CMAKE_SOURCE_DIR}/include/experiment/slave)
     target_include_directories(${name} PRIVATE ${CMAKE_SOURCE_DIR}/include)
