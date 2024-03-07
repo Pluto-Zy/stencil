@@ -42,6 +42,7 @@ int main(int argc, char** argv) {
         run_test(Stencil::DMA, "DMA", count, *options);
         run_test(Stencil::DMA_STATIC_UNROLL, "DMA Static Unroll", count, *options);
         run_test(Stencil::DMA_SLAVE_PACK, "DMA Slave Pack", count, *options);
+        run_test(Stencil::RMA, "RMA", count, *options);
     } else {
         return 1;
     }
