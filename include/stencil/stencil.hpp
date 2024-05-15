@@ -32,18 +32,8 @@ public:
     Stencil() = default;
     explicit Stencil(ProgramOptions options) :
         options(options),
-        matrix(
-            options.matrix_size,
-            options.matrix_size,
-            options.neighbor_width,
-            options.neighbor_width
-        ),
-        result(
-            options.matrix_size,
-            options.matrix_size,
-            options.neighbor_width,
-            options.neighbor_width
-        ) { }
+        matrix(options.matrix_size, options.matrix_size, options.radius, options.radius),
+        result(options.matrix_size, options.matrix_size, options.radius, options.radius) { }
 
     void initialize_matrix();
 

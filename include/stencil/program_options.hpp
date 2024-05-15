@@ -12,8 +12,8 @@ struct ProgramOptions {
     unsigned block_size;
     /// Number of iterations.
     unsigned iterations;
-    /// The width of the neighborhood.
-    unsigned neighbor_width;
+    /// The radius of the stencil shape.
+    unsigned radius;
 
     /// Parse the program arguments.
     static auto parse(int argc, char** argv) -> std::optional<ProgramOptions>;
