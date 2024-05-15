@@ -2,6 +2,7 @@
 #define STENCIL_STENCIL_HPP
 
 #include <chrono>
+#include <string_view>
 
 #include <stencil/bmp_image.hpp>
 #include <stencil/boundary_matrix.hpp>
@@ -38,6 +39,7 @@ public:
     void initialize_matrix();
 
     auto run(InputMethod method) -> std::chrono::steady_clock::duration;
+    auto run(std::string_view method_name) -> std::chrono::steady_clock::duration;
 
     auto to_bmp() const -> BMPImage;
 

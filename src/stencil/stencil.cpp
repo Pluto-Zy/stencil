@@ -4,7 +4,10 @@
 #include "stencil/boundary_matrix.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <string>
+#include <string_view>
+#include <unordered_map>
 
 void Stencil::initialize_matrix() {
     // We set off with an initial solution of 0. The left and right boundary are fixed at 1, while
@@ -52,6 +55,22 @@ auto Stencil::run(Stencil::InputMethod method) -> std::chrono::steady_clock::dur
     auto const end = std::chrono::steady_clock::now();
 
     return end - start;
+}
+
+auto Stencil::run(std::string_view method_names) -> std::chrono::steady_clock::duration {
+    // clang-format off
+    static std::unordered_map<std::string_view, InputMethod> const method_map = {
+        { "DMA", DMA },
+        { "DMAStaticUnroll", DMA_STATIC_UNROLL },
+        { "DMASlavePack", DMA_SLAVE_PACK },
+        { "RMA", RMA },
+    };
+    // clang-format on
+
+    auto const iter = method_map.find(method_names);
+    assert(iter != method_map.end());
+
+    return run(iter->second);
 }
 
 auto Stencil::to_bmp() const -> BMPImage {
