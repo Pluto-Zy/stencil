@@ -333,17 +333,17 @@ void stencil_iterate_rma(Arguments& args) {
         // Compute contents.
         for (unsigned row = 1; row != slave_input.rows() - 1; ++row) {
             unsigned col = 1;
-            slave_output.data_at(row, col) = 0.25
+            slave_output.data_at(row, col) = 0.25f
                 * (slave_input.data_at(row - 1, col) + slave_input.left_inner_boundary_at(row, 0)
                    + slave_input.data_at(row, col + 1) + slave_input.data_at(row + 1, col));
 
             for (++col; col != slave_input.cols() - 2; ++col) {
-                slave_output.data_at(row, col) = 0.25
+                slave_output.data_at(row, col) = 0.25f
                     * (slave_input.data_at(row - 1, col) + slave_input.data_at(row, col - 1)
                        + slave_input.data_at(row, col + 1) + slave_input.data_at(row + 1, col));
             }
 
-            slave_output.data_at(row, col) = 0.25
+            slave_output.data_at(row, col) = 0.25f
                 * (slave_input.data_at(row - 1, col) + slave_input.data_at(row, col - 1)
                    + slave_input.right_inner_boundary_at(row, 0)
                    + slave_input.data_at(row + 1, col));
@@ -357,21 +357,21 @@ void stencil_iterate_rma(Arguments& args) {
             constexpr unsigned col = 0;
             unsigned row = 0;
             // Left-top corner.
-            slave_output.left_inner_boundary_at(row, 0) = slave_output.data_at(row, col) = 0.25
+            slave_output.left_inner_boundary_at(row, 0) = slave_output.data_at(row, col) = 0.25f
                 * (slave_input.top_boundary_at(0, col) + slave_input.left_boundary_at(row, 0)
                    + slave_input.data_at(row, col + 1)
                    + slave_input.left_inner_boundary_at(row + 1, 0));
 
             // Left boundary.
             for (++row; row != slave_input.rows() - 1; ++row) {
-                slave_output.left_inner_boundary_at(row, 0) = 0.25
+                slave_output.left_inner_boundary_at(row, 0) = 0.25f
                     * (slave_input.left_inner_boundary_at(row - 1, 0)
                        + slave_input.left_boundary_at(row, 0) + slave_input.data_at(row, col + 1)
                        + slave_input.left_inner_boundary_at(row + 1, 0));
             }
 
             // Left-bottom corner.
-            slave_output.left_inner_boundary_at(row, 0) = slave_output.data_at(row, col) = 0.25
+            slave_output.left_inner_boundary_at(row, 0) = slave_output.data_at(row, col) = 0.25f
                 * (slave_input.left_inner_boundary_at(row - 1, 0)
                    + slave_input.left_boundary_at(row, 0) + slave_input.data_at(row, col + 1)
                    + slave_input.bottom_boundary_at(0, col));
@@ -382,21 +382,21 @@ void stencil_iterate_rma(Arguments& args) {
             unsigned row = 0;
 
             // Right-top corner.
-            slave_output.right_inner_boundary_at(row, 0) = slave_output.data_at(row, col) = 0.25
+            slave_output.right_inner_boundary_at(row, 0) = slave_output.data_at(row, col) = 0.25f
                 * (slave_input.top_boundary_at(0, col) + slave_input.data_at(row, col - 1)
                    + slave_input.right_boundary_at(row, 0)
                    + slave_input.right_inner_boundary_at(row + 1, 0));
 
             // Right boundary.
             for (++row; row != slave_input.rows() - 1; ++row) {
-                slave_output.right_inner_boundary_at(row, 0) = 0.25
+                slave_output.right_inner_boundary_at(row, 0) = 0.25f
                     * (slave_input.right_inner_boundary_at(row - 1, 0)
                        + slave_input.data_at(row, col - 1) + slave_input.right_boundary_at(row, 0)
                        + slave_input.right_inner_boundary_at(row + 1, 0));
             }
 
             // Right-bottom corner.
-            slave_output.right_inner_boundary_at(row, 0) = slave_output.data_at(row, col) = 0.25
+            slave_output.right_inner_boundary_at(row, 0) = slave_output.data_at(row, col) = 0.25f
                 * (slave_input.right_inner_boundary_at(row - 1, 0)
                    + slave_input.data_at(row, col - 1) + slave_input.right_boundary_at(row, 0)
                    + slave_input.bottom_boundary_at(0, col));
@@ -407,17 +407,17 @@ void stencil_iterate_rma(Arguments& args) {
             unsigned col = 1;
             constexpr unsigned row = 0;
 
-            slave_output.data_at(row, col) = 0.25
+            slave_output.data_at(row, col) = 0.25f
                 * (slave_input.top_boundary_at(0, col) + slave_input.left_inner_boundary_at(row, 0)
                    + slave_input.data_at(row, col + 1) + slave_input.data_at(row + 1, col));
 
             for (++col; col != slave_input.cols() - 2; ++col) {
-                slave_output.data_at(row, col) = 0.25
+                slave_output.data_at(row, col) = 0.25f
                     * (slave_input.top_boundary_at(0, col) + slave_input.data_at(row, col - 1)
                        + slave_input.data_at(row, col + 1) + slave_input.data_at(row + 1, col));
             }
 
-            slave_output.data_at(row, col) = 0.25
+            slave_output.data_at(row, col) = 0.25f
                 * (slave_input.top_boundary_at(0, col) + slave_input.data_at(row, col - 1)
                    + slave_input.right_inner_boundary_at(row, 0)
                    + slave_input.data_at(row + 1, col));
@@ -428,18 +428,18 @@ void stencil_iterate_rma(Arguments& args) {
             unsigned const row = slave_input.rows() - 1;
             unsigned col = 1;
 
-            slave_output.data_at(row, col) = 0.25
+            slave_output.data_at(row, col) = 0.25f
                 * (slave_input.data_at(row - 1, col) + slave_input.left_inner_boundary_at(row, 0)
                    + slave_input.data_at(row, col + 1) + slave_input.bottom_boundary_at(0, col));
 
             for (++col; col != slave_input.cols() - 2; ++col) {
-                slave_output.data_at(row, col) = 0.25
+                slave_output.data_at(row, col) = 0.25f
                     * (slave_input.data_at(row - 1, col) + slave_input.data_at(row, col - 1)
                        + slave_input.data_at(row, col + 1)
                        + slave_input.bottom_boundary_at(0, col));
             }
 
-            slave_output.data_at(row, col) = 0.25
+            slave_output.data_at(row, col) = 0.25f
                 * (slave_input.data_at(row - 1, col) + slave_input.data_at(row, col - 1)
                    + slave_input.right_inner_boundary_at(row, 0)
                    + slave_input.bottom_boundary_at(0, col));
