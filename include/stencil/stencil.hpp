@@ -3,6 +3,7 @@
 
 #include <chrono>
 #include <string_view>
+#include <tuple>
 
 #include <stencil/bmp_image.hpp>
 #include <stencil/boundary_matrix.hpp>
@@ -31,15 +32,14 @@ public:
     };
 
     Stencil() = default;
-    explicit Stencil(ProgramOptions options) :
-        options(options),
-        matrix(options.matrix_size, options.matrix_size, options.radius, options.radius),
-        result(options.matrix_size, options.matrix_size, options.radius, options.radius) { }
+    explicit Stencil(ProgramOptions options) : options(options) { }
 
     void initialize_matrix();
 
     auto run(InputMethod method) -> std::chrono::steady_clock::duration;
     auto run(std::string_view method_name) -> std::chrono::steady_clock::duration;
+
+    auto check_result() const -> bool;
 
     auto to_bmp() const -> BMPImage;
 
@@ -49,6 +49,13 @@ private:
     BoundaryMatrix<float> matrix;
     /// The result of an iteration.
     BoundaryMatrix<float> result;
+
+    static auto generate_initialized_matrix(
+        std::size_t width,
+        std::size_t height,
+        unsigned boundary_width,
+        unsigned boundary_height
+    ) -> std::tuple<BoundaryMatrix<float>, BoundaryMatrix<float>>;
 };
 
 #endif  // STENCIL_STENCIL_HPP

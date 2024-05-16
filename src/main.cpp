@@ -10,6 +10,20 @@
 
 namespace {
 void run_test(std::string_view method_name, ProgramOptions const& options) {
+    if (options.check_result) {
+        std::cout << "Start to check the correctness of method " << method_name << ".\n";
+
+        Stencil stencil(options);
+        stencil.run(method_name);
+
+        if (stencil.check_result()) {
+            std::cout << "The results of method " << method_name << " is correct.\n";
+        } else {
+            std::cout << "The results of method " << method_name << " is incorrect.\n";
+            return;
+        }
+    }
+
     std::chrono::steady_clock::duration total_duration = {};
 
     for (unsigned i = 0; i != options.repeat_count; ++i) {

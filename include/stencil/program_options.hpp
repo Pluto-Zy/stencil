@@ -20,6 +20,9 @@ struct ProgramOptions {
     unsigned repeat_count;
     /// The list of names of methods to be tested.
     std::vector<std::string> method_names;
+    /// Indicates whether to check the result by comparing it with the result of naive
+    /// implementation.
+    bool check_result;
 
     /// Parse the program arguments.
     static auto parse(int argc, char** argv) -> std::optional<ProgramOptions>;

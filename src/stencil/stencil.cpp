@@ -5,20 +5,19 @@
 
 #include <algorithm>
 #include <chrono>
-#include <string>
+#include <cmath>
+#include <cstring>
 #include <string_view>
+#include <tuple>
 #include <unordered_map>
 
 void Stencil::initialize_matrix() {
-    // We set off with an initial solution of 0. The left and right boundary are fixed at 1, while
-    // the upper and lower boundaries are set to 0.
-    matrix.fill_boundary(BoundaryPosition::Left, 1.f);
-    matrix.fill_boundary(BoundaryPosition::Right, 1.f);
-
-    // We alos initialize `result`, because we will swap `matrix` and `result` in the next
-    // iteration and `result` will become the input.
-    result.fill_boundary(BoundaryPosition::Left, 1.f);
-    result.fill_boundary(BoundaryPosition::Right, 1.f);
+    std::tie(matrix, result) = generate_initialized_matrix(
+        options.matrix_size,
+        options.matrix_size,
+        options.radius,
+        options.radius
+    );
 }
 
 auto Stencil::run(Stencil::InputMethod method) -> std::chrono::steady_clock::duration {
@@ -73,6 +72,84 @@ auto Stencil::run(std::string_view method_names) -> std::chrono::steady_clock::d
     return run(iter->second);
 }
 
+auto Stencil::check_result() const -> bool {
+    // Generate input for the naive implementation.
+    auto [naive_input, naive_output] = generate_initialized_matrix(
+        options.matrix_size,
+        options.matrix_size,
+        options.radius,
+        options.radius
+    );
+
+    // Run a naive implementation of the algorithm to produce correct results.
+    float const avg = 1.f
+        / static_cast<float>((naive_input.boundary_width() + naive_input.boundary_height()) * 2);
+
+    // In the current implementation, the input buffer and output buffer are swapped every
+    // iteration, which is a shallow swap. This makes it impossible to tell which buffer holds the
+    // final result after the last iteration, so we use this variable to indicate the exchange
+    // status.
+    bool swapped = false;
+
+    for (unsigned i = 0; i != options.iterations; ++i) {
+        for (unsigned row = naive_input.boundary_height();
+             row != naive_input.height_with_boundary() - naive_input.boundary_height();
+             ++row)
+        {
+            for (unsigned col = naive_input.boundary_width();
+                 col != naive_input.width_with_boundary() - naive_input.boundary_width();
+                 ++col)
+            {
+                float sum = 0.f;
+
+                // left
+                for (unsigned nc = col - naive_input.boundary_width(); nc != col; ++nc) {
+                    sum += naive_input.elem_with_boundary_at(row, nc);
+                }
+
+                // right
+                for (unsigned nc = col; nc != col + naive_input.boundary_width(); ++nc) {
+                    sum += naive_input.elem_with_boundary_at(row, nc + 1);
+                }
+
+                // top
+                for (unsigned nr = row - naive_input.boundary_height(); nr != row; ++nr) {
+                    sum += naive_input.elem_with_boundary_at(nr, col);
+                }
+
+                // bottom
+                for (unsigned nr = row; nr != row + naive_input.boundary_height(); ++nr) {
+                    sum += naive_input.elem_with_boundary_at(nr + 1, col);
+                }
+
+                naive_output.elem_with_boundary_at(row, col) = sum * avg;
+            }
+        }
+
+        std::swap(naive_input, naive_output);
+        swapped = !swapped;
+    }
+
+    // Check the result.
+    BoundaryMatrix<float> const& compared = swapped ? result : matrix;
+    for (unsigned row = 0; row != naive_input.height(); ++row) {
+        for (unsigned col = 0; col != naive_input.width(); ++col) {
+            if (std::fabs(naive_input.elem_at(row, col) - compared.elem_at(row, col)) >= 1e-4) {
+                std::printf(
+                    "invalid result at (%u, %u): %.15f vs %.15f\n",
+                    row,
+                    col,
+                    naive_input.elem_at(row, col),
+                    compared.elem_at(row, col)
+                );
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
+
 auto Stencil::to_bmp() const -> BMPImage {
     std::vector<BMPImage::Pixel> image_data;
     image_data.reserve(options.matrix_size * options.matrix_size);
@@ -108,4 +185,23 @@ auto Stencil::to_bmp() const -> BMPImage {
     }
 
     return BMPImage(std::move(image_data), options.matrix_size, options.matrix_size);
+}
+
+auto Stencil::generate_initialized_matrix(
+    std::size_t width,
+    std::size_t height,
+    unsigned boundary_width,
+    unsigned boundary_height
+) -> std::tuple<BoundaryMatrix<float>, BoundaryMatrix<float>> {
+    BoundaryMatrix<float> input1(width, height, boundary_width, boundary_height);
+    BoundaryMatrix<float> input2(width, height, boundary_width, boundary_height);
+
+    // We set off with an initial solution of 0. The left and right boundary are fixed at 1, while
+    // the upper and lower boundaries are set to 0.
+    input1.fill_boundary(BoundaryPosition::Left, 1.f);
+    input1.fill_boundary(BoundaryPosition::Right, 1.f);
+    input2.fill_boundary(BoundaryPosition::Left, 1.f);
+    input2.fill_boundary(BoundaryPosition::Right, 1.f);
+
+    return std::make_tuple(std::move(input1), std::move(input2));
 }

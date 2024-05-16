@@ -29,6 +29,12 @@ auto ProgramOptions::parse(int argc, char** argv) -> std::optional<ProgramOption
         ->default_val(1);
     app.add_option("-m,--methods", result.method_names, "List of methods to be tested.")
         ->required();
+    app.add_flag(
+           "-c,--check-result",
+           result.check_result,
+           "Whether to compare the result with the result of the naive implementation."
+    )
+        ->default_val(false);
 
     try {
         app.parse(argc, argv);
