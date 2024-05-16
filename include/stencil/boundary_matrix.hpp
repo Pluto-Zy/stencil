@@ -26,29 +26,35 @@ namespace detail {
 /// Note that in this example, the matrix should be constructed with
 ///     - width: 2
 ///     - height: 3
-///     - neighbor_width: 2
-///     - neighbor_height: 1
+///     - boundary_width: 2
+///     - boundary_height: 1
 template <class ElemTy, bool Owner>
 class BoundaryMatrix {
 public:
     using value_type = ElemTy;
 
-    BoundaryMatrix() : _neighbor_width(0) { }
+    BoundaryMatrix() :
+        _actual_width(0),
+        _actual_height(0),
+        _boundary_width(0),
+        _boundary_height(0),
+        _data_stride(0),
+        _data() { }
 
-    /// Initialize the matrix with the given `width`, `height`, `neighbor_width` and
-    /// `neighbor_height`. Note that `width` and `height` should be the size of the matrix
+    /// Initialize the matrix with the given `width`, `height`, `boundary_width` and
+    /// `boundary_height`. Note that `width` and `height` should be the size of the matrix
     /// *excluding* the width or height of the neighborhood.
     template <bool IsOwner = Owner, std::enable_if_t<IsOwner, int> = 0>
     BoundaryMatrix(
         std::size_t width,
         std::size_t height,
-        unsigned neighbor_width,
-        unsigned neighbor_height
+        unsigned boundary_width,
+        unsigned boundary_height
     ) :
-        _actual_width(width + neighbor_width * 2),
-        _actual_height(height + neighbor_height * 2),
-        _neighbor_width(neighbor_width),
-        _neighbor_height(neighbor_height),
+        _actual_width(width + boundary_width * 2),
+        _actual_height(height + boundary_height * 2),
+        _boundary_width(boundary_width),
+        _boundary_height(boundary_height),
         _data_stride(_actual_width),
         _data(std::make_unique<ElemTy[]>(_actual_width * _actual_height)) { }
 
@@ -56,24 +62,24 @@ public:
     BoundaryMatrix(
         std::size_t width,
         std::size_t height,
-        unsigned neighbor_width,
-        unsigned neighbor_height,
+        unsigned boundary_width,
+        unsigned boundary_height,
         std::size_t stride,
         ElemTy* data
     ) :
-        _actual_width(width + neighbor_width * 2),
-        _actual_height(height + neighbor_height * 2),
-        _neighbor_width(neighbor_width),
-        _neighbor_height(neighbor_height),
+        _actual_width(width + boundary_width * 2),
+        _actual_height(height + boundary_height * 2),
+        _boundary_width(boundary_width),
+        _boundary_height(boundary_height),
         _data_stride(stride),
         _data(data) { }
 
     auto width() const -> std::size_t {
-        return _actual_width - _neighbor_width * 2;
+        return _actual_width - _boundary_width * 2;
     }
 
     auto height() const -> std::size_t {
-        return _actual_height - _neighbor_height * 2;
+        return _actual_height - _boundary_height * 2;
     }
 
     auto width_with_boundary() const -> std::size_t {
@@ -85,11 +91,11 @@ public:
     }
 
     auto boundary_width() const -> unsigned {
-        return _neighbor_width;
+        return _boundary_width;
     }
 
     auto boundary_height() const -> unsigned {
-        return _neighbor_height;
+        return _boundary_height;
     }
 
     auto internal_data_stride() const -> std::size_t {
@@ -113,7 +119,7 @@ public:
 
     auto elem_at(std::size_t row, std::size_t col) const -> ElemTy& {
         assert(row < height() && col < width());
-        return elem_with_boundary_at(row + _neighbor_height, col + _neighbor_width);
+        return elem_with_boundary_at(row + _boundary_height, col + _boundary_width);
     }
 
     auto empty() const -> bool {
@@ -194,8 +200,8 @@ public:
             return {
                 /*width=*/0,
                 /*height=*/0,
-                /*neighbor_width=*/boundary_width(),
-                /*neightbor_height=*/boundary_height(),
+                /*boundary_width=*/boundary_width(),
+                /*boundary_height=*/boundary_height(),
                 /*stride=*/internal_data_stride(),
                 raw_data(),
             };
@@ -203,8 +209,8 @@ public:
             return {
                 /*width=*/(std::min)(block_width, width() - subview_col_beg),
                 /*height=*/(std::min)(block_height, height() - subview_row_beg),
-                /*neighbor_width=*/boundary_width(),
-                /*neighbor_height=*/boundary_height(),
+                /*boundary_width=*/boundary_width(),
+                /*boundary_height=*/boundary_height(),
                 /*stride=*/internal_data_stride(),
                 /*data=*/&elem_with_boundary_at(subview_row_beg, subview_col_beg),
             };
@@ -214,8 +220,8 @@ public:
 protected:
     std::size_t _actual_width;
     std::size_t _actual_height;
-    unsigned _neighbor_width;
-    unsigned _neighbor_height;
+    unsigned _boundary_width;
+    unsigned _boundary_height;
     std::size_t _data_stride;
     std::conditional_t<Owner, std::unique_ptr<ElemTy[]>, ElemTy*> _data;
 

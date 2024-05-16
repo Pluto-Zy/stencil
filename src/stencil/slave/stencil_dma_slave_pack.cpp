@@ -24,8 +24,8 @@ public:
         Base(
             /*width=*/host_block.width(),
             /*height=*/host_block.height(),
-            /*neighbor_width=*/host_block.boundary_width(),
-            /*neighbor_height=*/host_block.boundary_height(),
+            /*boundary_width=*/host_block.boundary_width(),
+            /*boundary_height=*/host_block.boundary_height(),
             // We must set the stride of the new block as the actual width of the origin block,
             // because we will allocate contiguous memory for the new block.
             /*stride=*/host_block.width_with_boundary(),
