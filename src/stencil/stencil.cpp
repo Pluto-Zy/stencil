@@ -63,6 +63,7 @@ auto Stencil::run(std::string_view method_names) -> std::chrono::steady_clock::d
         { "DMAStaticUnroll", DMA_STATIC_UNROLL },
         { "DMASlavePack", DMA_SLAVE_PACK },
         { "RMA", RMA },
+        { "RMAWithoutSync", RMA },
     };
     // clang-format on
 
