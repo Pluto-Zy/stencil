@@ -247,11 +247,11 @@ public:
         }
     }
 
-    void rma_iput_boundaries(athread_rply_t* send_reply) const {
-        rma_iput_top_boundary(send_reply, send_reply);
-        rma_iput_left_boundary(send_reply, send_reply);
-        rma_iput_bottom_boundary(send_reply, send_reply);
-        rma_iput_right_boundary(send_reply, send_reply);
+    void rma_iput_boundaries(athread_rply_t* send_reply, athread_rply_t* recv_reply) const {
+        rma_iput_top_boundary(send_reply, recv_reply);
+        rma_iput_left_boundary(send_reply, recv_reply);
+        rma_iput_bottom_boundary(send_reply, recv_reply);
+        rma_iput_right_boundary(send_reply, recv_reply);
     }
 
 private:
@@ -320,15 +320,17 @@ void stencil_iterate_rma(Arguments& args) {
     slave_input.generate_boundary();
     slave_output.generate_boundary();
 
-    unsigned const send_count = static_cast<unsigned>(_ROW != 0) + static_cast<unsigned>(_ROW != 7)
+    unsigned const recv_count = static_cast<unsigned>(_ROW != 0) + static_cast<unsigned>(_ROW != 7)
         + static_cast<unsigned>(_COL != 0) + static_cast<unsigned>(_COL != 7);
+    athread_rply_t replies[4] {};
 
     // Iterations.
     for (unsigned i = 0; i != args.iterations; ++i) {
-        athread_rply_t send_reply = 0;
+        athread_rply_t* send_reply = replies[i % 2 * 2];
+        athread_rply_t* recv_reply = send_reply + 1;
 
         // Send boundaries to other CPE.
-        slave_input.rma_iput_boundaries(&send_reply);
+        slave_input.rma_iput_boundaries(send_reply, recv_reply);
 
         // Compute contents.
         for (unsigned row = 1; row != slave_input.rows() - 1; ++row) {
@@ -350,8 +352,8 @@ void stencil_iterate_rma(Arguments& args) {
         }
 
         // Wait for boundaries.
-        // athread_rma_wait_value(&recv_reply, recv_count);
-        athread_rma_wait_value(&send_reply, send_count);
+        athread_rma_wait_value(recv_reply, recv_count);
+        *recv_reply = 0;
 
         {
             constexpr unsigned col = 0;
@@ -448,8 +450,6 @@ void stencil_iterate_rma(Arguments& args) {
         // Swap the input and result.
         std::swap(slave_input, slave_output);
         std::swap(local_host_input, local_host_output);
-
-        athread_ssync_array();
     }
 
     // Write the final result.
