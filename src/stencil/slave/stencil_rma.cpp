@@ -6,6 +6,13 @@
 #include <iterator>
 
 namespace {
+enum class RMAReply {
+    Top,
+    Bottom,
+    Left,
+    Right,
+};
+
 template <class ElemTy>
 class SlaveBlock {
     enum BoundaryPosition {
@@ -247,11 +254,11 @@ public:
         }
     }
 
-    void rma_iput_boundaries(athread_rply_t* send_reply, athread_rply_t* recv_reply) const {
-        rma_iput_top_boundary(send_reply, recv_reply);
-        rma_iput_left_boundary(send_reply, recv_reply);
-        rma_iput_bottom_boundary(send_reply, recv_reply);
-        rma_iput_right_boundary(send_reply, recv_reply);
+    void rma_iput_boundaries(athread_rply_t* send_reply, athread_rply_t* recv_replies) const {
+        rma_iput_bottom_boundary(send_reply, recv_replies + RMAReply::Top);
+        rma_iput_top_boundary(send_reply, recv_replies + RMAReply::Bottom);
+        rma_iput_right_boundary(send_reply, recv_replies + RMAReply::Left);
+        rma_iput_left_boundary(send_reply, recv_replies + RMAReply::Right);
     }
 
 private:
@@ -320,17 +327,15 @@ void stencil_iterate_rma(Arguments& args) {
     slave_input.generate_boundary();
     slave_output.generate_boundary();
 
-    unsigned const recv_count = static_cast<unsigned>(_ROW != 0) + static_cast<unsigned>(_ROW != 7)
-        + static_cast<unsigned>(_COL != 0) + static_cast<unsigned>(_COL != 7);
-    athread_rply_t replies[4] {};
+    athread_rply_t replies[10] {};
 
     // Iterations.
     for (unsigned i = 0; i != args.iterations; ++i) {
-        athread_rply_t* send_reply = replies[i % 2 * 2];
-        athread_rply_t* recv_reply = send_reply + 1;
+        athread_rply_t* send_reply = &replies[i % 2 * 5];
+        athread_rply_t* recv_replies = send_reply + 1;
 
         // Send boundaries to other CPE.
-        slave_input.rma_iput_boundaries(send_reply, recv_reply);
+        slave_input.rma_iput_boundaries(send_reply, recv_replies);
 
         // Compute contents.
         for (unsigned row = 1; row != slave_input.rows() - 1; ++row) {
@@ -351,9 +356,65 @@ void stencil_iterate_rma(Arguments& args) {
                    + slave_input.data_at(row + 1, col));
         }
 
-        // Wait for boundaries.
-        athread_rma_wait_value(recv_reply, recv_count);
-        *recv_reply = 0;
+        // Wait for the top boundary.
+        if (_ROW != 0) {
+            athread_rma_wait_value(recv_replies + RMAReply::Top, 1);
+            recv_replies[RMAReply::Top] = 0;
+        }
+
+        {
+            unsigned col = 1;
+            constexpr unsigned row = 0;
+
+            slave_output.data_at(row, col) = 0.25f
+                * (slave_input.top_boundary_at(0, col) + slave_input.left_inner_boundary_at(row, 0)
+                   + slave_input.data_at(row, col + 1) + slave_input.data_at(row + 1, col));
+
+            for (++col; col != slave_input.cols() - 2; ++col) {
+                slave_output.data_at(row, col) = 0.25f
+                    * (slave_input.top_boundary_at(0, col) + slave_input.data_at(row, col - 1)
+                       + slave_input.data_at(row, col + 1) + slave_input.data_at(row + 1, col));
+            }
+
+            slave_output.data_at(row, col) = 0.25f
+                * (slave_input.top_boundary_at(0, col) + slave_input.data_at(row, col - 1)
+                   + slave_input.right_inner_boundary_at(row, 0)
+                   + slave_input.data_at(row + 1, col));
+        }
+
+        // Wait for the bottom bounary.
+        if (_ROW != 7) {
+            athread_rma_wait_value(recv_replies + RMAReply::Bottom, 1);
+            recv_replies[RMAReply::Bottom] = 0;
+        }
+
+        // Bottom boundary.
+        {
+            unsigned const row = slave_input.rows() - 1;
+            unsigned col = 1;
+
+            slave_output.data_at(row, col) = 0.25f
+                * (slave_input.data_at(row - 1, col) + slave_input.left_inner_boundary_at(row, 0)
+                   + slave_input.data_at(row, col + 1) + slave_input.bottom_boundary_at(0, col));
+
+            for (++col; col != slave_input.cols() - 2; ++col) {
+                slave_output.data_at(row, col) = 0.25f
+                    * (slave_input.data_at(row - 1, col) + slave_input.data_at(row, col - 1)
+                       + slave_input.data_at(row, col + 1)
+                       + slave_input.bottom_boundary_at(0, col));
+            }
+
+            slave_output.data_at(row, col) = 0.25f
+                * (slave_input.data_at(row - 1, col) + slave_input.data_at(row, col - 1)
+                   + slave_input.right_inner_boundary_at(row, 0)
+                   + slave_input.bottom_boundary_at(0, col));
+        }
+
+        // Wait for the left boundary.
+        if (_COL != 0) {
+            athread_rma_wait_value(recv_replies + RMAReply::Left, 1);
+            recv_replies[RMAReply::Left] = 0;
+        }
 
         {
             constexpr unsigned col = 0;
@@ -379,6 +440,12 @@ void stencil_iterate_rma(Arguments& args) {
                    + slave_input.bottom_boundary_at(0, col));
         }
 
+        // Wait for the right boundary.
+        if (_COL != 7) {
+            athread_rma_wait_value(recv_replies + RMAReply::Right, 1);
+            recv_replies[RMAReply::Right] = 0;
+        }
+
         {
             unsigned const col = slave_input.cols() - 1;
             unsigned row = 0;
@@ -401,49 +468,6 @@ void stencil_iterate_rma(Arguments& args) {
             slave_output.right_inner_boundary_at(row, 0) = slave_output.data_at(row, col) = 0.25f
                 * (slave_input.right_inner_boundary_at(row - 1, 0)
                    + slave_input.data_at(row, col - 1) + slave_input.right_boundary_at(row, 0)
-                   + slave_input.bottom_boundary_at(0, col));
-        }
-
-        // Top boundary.
-        {
-            unsigned col = 1;
-            constexpr unsigned row = 0;
-
-            slave_output.data_at(row, col) = 0.25f
-                * (slave_input.top_boundary_at(0, col) + slave_input.left_inner_boundary_at(row, 0)
-                   + slave_input.data_at(row, col + 1) + slave_input.data_at(row + 1, col));
-
-            for (++col; col != slave_input.cols() - 2; ++col) {
-                slave_output.data_at(row, col) = 0.25f
-                    * (slave_input.top_boundary_at(0, col) + slave_input.data_at(row, col - 1)
-                       + slave_input.data_at(row, col + 1) + slave_input.data_at(row + 1, col));
-            }
-
-            slave_output.data_at(row, col) = 0.25f
-                * (slave_input.top_boundary_at(0, col) + slave_input.data_at(row, col - 1)
-                   + slave_input.right_inner_boundary_at(row, 0)
-                   + slave_input.data_at(row + 1, col));
-        }
-
-        // Bottom boundary.
-        {
-            unsigned const row = slave_input.rows() - 1;
-            unsigned col = 1;
-
-            slave_output.data_at(row, col) = 0.25f
-                * (slave_input.data_at(row - 1, col) + slave_input.left_inner_boundary_at(row, 0)
-                   + slave_input.data_at(row, col + 1) + slave_input.bottom_boundary_at(0, col));
-
-            for (++col; col != slave_input.cols() - 2; ++col) {
-                slave_output.data_at(row, col) = 0.25f
-                    * (slave_input.data_at(row - 1, col) + slave_input.data_at(row, col - 1)
-                       + slave_input.data_at(row, col + 1)
-                       + slave_input.bottom_boundary_at(0, col));
-            }
-
-            slave_output.data_at(row, col) = 0.25f
-                * (slave_input.data_at(row - 1, col) + slave_input.data_at(row, col - 1)
-                   + slave_input.right_inner_boundary_at(row, 0)
                    + slave_input.bottom_boundary_at(0, col));
         }
 
